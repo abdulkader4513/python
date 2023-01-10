@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Login to Docker Hub with Credentials at the Secrets
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+      - name: Start minikube
+        uses: medyagh/setup-minikube@master
+      - name: Try the cluster !
+        run: kubectl get pods -A 
+      -
+        name: Build and push
+        run: |
+          export SHELL=/bin/bash
+          eval $(minikube -p minikube docker-env)
+          docker build -f ./Dockerfile -t abdulkader4513/precily .
+          docker tag abdulkader4513/precily abdulkader4513/precily:latest
+          docker images
+          docker push abdulkader4513/precily:latest
+          echo -n "verifying images:"
+      - name: Deploy to minikube
+        run:
+          kubectl apply -f deploy-to-minikube.yaml
+      - name: Test service URLs
+        run: |
+          sleep 1m
+          kubectl get svc
+          minikube service list
+          minikube service precily --url
+          echo "------------------opening the service------------------"
+          echo "curl $(minikube service precily --url)"
+          echo "------------------TESTING ROOT FUNCTION------------------"
+          curl $(minikube service precily --url)
+          echo "------------------TESTING READ OCR FUNCTION------------------"
+          read_ocr_body='{"image":"https://miro.medium.com/max/640/1*t4bo8ptFFmSNbYduTCrcKg.webp","lang":"eng","config":""}'
+          read_ocr_body_tepl=$(cat <<EOF
+          {"image":"https://miro.medium.com/max/640/1*t4bo8ptFFmSNbYduTCrcKg.webp","lang":"eng","config":""}
+          EOF
+          )
+          echo $read_ocr_body
+          echo 'curl --location --request POST "$(minikube service precily --url)/read_ocr" \
+          --header 'Content-Type: application/json' \
+          --data-raw "$read_ocr_body_tepl"'
+          
+          curl --location --request POST "$(minikube service precily --url)/read_ocr" \
+          --header 'Content-Type: application/json' \
+          --data-raw "$read_ocr_body_tepl"
